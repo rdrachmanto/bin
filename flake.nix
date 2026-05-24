@@ -13,6 +13,8 @@
         buildInputs = with pkgs; [
           janet
           jpm
+          go
+          gopls
         ];
         
         # Runs automatically upon entering the shell
