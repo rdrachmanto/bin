@@ -4,4 +4,4 @@ bin
 build
 jpm_tree
 bin
-direnv
+.direnv
