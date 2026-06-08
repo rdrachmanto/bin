@@ -48,13 +48,22 @@
         (scan-number)
         (/ 1_000_000)))
   (def mem-used (- mem-total mem-avail))
+  (def swap-used (- swap-total swap-free))
   
   {:mem-total           mem-total
    :mem-avail           mem-avail
    :mem-used            mem-used
    :mem-used-percentage (* (/ mem-used mem-total) 100)
    :swap-total          swap-total
-   :swap-free           swap-free})
+   :swap-free           swap-free
+   :swap-used           swap-used
+   :swap-used-percentage (* (/ swap-used swap-total) 100)})
+
+(defn get-hardware-family
+  []
+  (def [stdout-r stdout-w] (os/pipe))
+  (os/execute ["cat" "/sys/devices/virtual/dmi/id/product_family"] :p {:out stdout-w})
+  (string/trim (:read stdout-r math/int32-max)))
 
 (defn get-disk-usage
   []
@@ -86,7 +95,13 @@
            " GB ("
            (math/floor (get mem :mem-used-percentage))
            "%)")
-
+    (print (colorize "  Swap: ")
+           (string/format "%.2f" (get mem :swap-used))
+           " GB / "
+           (string/format "%.2f" (get mem :swap-total))
+           " GB ("
+           (math/floor (get mem :swap-used-percentage))
+           "%)")
     (loop [[i du] :pairs disks]
       (print (colorize (string "Disk " (+ i 1) ": "))
              (get du 2)
@@ -134,10 +149,12 @@
 
 (defn os-probe
   []
-  (let [os-name (get-os-release)
+  (let [host    (get-hardware-family)
+        os-name (get-os-release)
         kernel  (get-kernel)
         uptime  (get-uptime)
         shell   (get-shell)]
+    (print (colorize "  Host: ") host)
     (print (colorize "    OS: ") os-name)
     (print (colorize "Kernel: ") kernel)
     (print (colorize "Uptime: ") (get uptime :hours) " hours " (get uptime :minutes) " minutes")
