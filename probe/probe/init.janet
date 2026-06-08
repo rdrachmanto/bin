@@ -3,20 +3,22 @@
 
 (defn get-cpu
   []
-  (def [cpui-stdout-r cpui-stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/cpuinfo"] :p {:out cpui-stdout-w})
+  (def [stdout-r stdout-w] (os/pipe))
+  (os/execute ["cat" "/proc/cpuinfo"] :p {:out stdout-w})
+
+  (def cpu-info (:read stdout-r math/int32-max))
   (def cpu-filter
     ~{:value (capture (any (if-not "\n" 1)))
       :line  (* "model name" :s+ ":" :s+ :value)
       :main  (* (any (if-not :line 1)) :line)})
-  (get (peg/match cpu-filter (:read cpui-stdout-r math/int32-max)) 0))
+  (get (peg/match cpu-filter cpu-info) 0))
 
 (defn get-mem
   []
-  (def [memi-stdout-r memi-stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/meminfo"] :p {:out memi-stdout-w})
+  (def [stdout-r stdout-w] (os/pipe))
+  (os/execute ["cat" "/proc/meminfo"] :p {:out stdout-w})
   
-  (def mem-info (:read memi-stdout-r math/int32-max))
+  (def mem-info (:read stdout-r math/int32-max))
   
   (def mem-total-filter
     ~{:line (* "MemTotal:" :s+ (capture :d+) :s+ "kB\n")
@@ -53,11 +55,9 @@
   {:mem-total           mem-total
    :mem-avail           mem-avail
    :mem-used            mem-used
-   :mem-used-percentage (* (/ mem-used mem-total) 100)
    :swap-total          swap-total
    :swap-free           swap-free
-   :swap-used           swap-used
-   :swap-used-percentage (* (/ swap-used swap-total) 100)})
+   :swap-used           swap-used})
 
 (defn get-hardware-family
   []
@@ -92,51 +92,44 @@
            (string/format "%.2f" (get mem :mem-used))
            " GB / "
            (string/format "%.2f" (get mem :mem-total))
-           " GB ("
-           (math/floor (get mem :mem-used-percentage))
-           "%)")
+           " GB")
     (print (colorize "  Swap: ")
            (string/format "%.2f" (get mem :swap-used))
            " GB / "
            (string/format "%.2f" (get mem :swap-total))
-           " GB ("
-           (math/floor (get mem :swap-used-percentage))
-           "%)")
+           " GB")
     (loop [[i du] :pairs disks]
       (print (colorize (string "Disk " (+ i 1) ": "))
              (get du 2)
              " GB / "
              (get du 1)
-             " GB ("
-             (get du 4)
-             "%) "
+             " GB "
              "[" (array/peek du) "]"))))
 
 (defn get-os-release
   []
-  (def [osrel-stdout-r osrel-stdout-w] (os/pipe))
-  (os/execute ["cat" "/etc/os-release"] :p {:out osrel-stdout-w})
+  (def [stdout-r stdout-w] (os/pipe))
+  (os/execute ["cat" "/etc/os-release"] :p {:out stdout-w})
   (def p
     ~{:value (capture (any (if-not "\"" 1)))
       :line  (* "PRETTY_NAME" "=" "\"" :value "\"")
       :main  (* (any (if-not :line 1)) :line)})
-  (get (peg/match p (:read osrel-stdout-r math/int32-max)) 0))
+  (get (peg/match p (:read stdout-r math/int32-max)) 0))
 
-(defn get-shell
-  []
-  (def [shell-stdout-r shell-stdout-w] (os/pipe))
+(defn get-shell  []
+  (def [stdout-r stdout-w] (os/pipe))
   (def pid (os/getpid))
   (os/execute
     ["sh" "-c" "ps -p $(ps -o ppid= -p $1) -o comm=" "sh" (string pid)]
     :p
-    {:out shell-stdout-w})
-  (string/replace "\n" "" (:read shell-stdout-r math/int32-max)))
+    {:out stdout-w})
+  (string/replace "\n" "" (:read stdout-r math/int32-max)))
 
 (defn get-uptime
   []
-  (def [uptime-stdout-r uptime-stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/uptime"] :p {:out uptime-stdout-w})
-  (let [uptime-s              (get (string/split " " (:read uptime-stdout-r math/int32-max)) 0)
+  (def [stdout-r stdout-w] (os/pipe))
+  (os/execute ["cat" "/proc/uptime"] :p {:out stdout-w})
+  (let [uptime-s              (get (string/split " " (:read stdout-r math/int32-max)) 0)
         uptime-h              (math/trunc (/ (scan-number uptime-s) 3600))
         uptime-remaining-mins (math/trunc (/ (% (scan-number uptime-s) 3600) 60))]
     {:hours uptime-h :minutes uptime-remaining-mins}))
@@ -157,7 +150,7 @@
     (print (colorize "  Host: ") host)
     (print (colorize "    OS: ") os-name)
     (print (colorize "Kernel: ") kernel)
-    (print (colorize "Uptime: ") (get uptime :hours) " hours " (get uptime :minutes) " minutes")
+    (print (colorize "Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
     (print (colorize " Shell: ") shell)))
 
 (defn main
