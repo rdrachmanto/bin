@@ -1,24 +1,34 @@
+(import spork/argparse :prefix "")
+(use spork/sh)
+(use spork/sh-dsl)
+
 (defn colorize [to-color]
   (string "\e[94m" to-color "\e[0m"))
 
 (defn get-cpu
   []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/cpuinfo"] :p {:out stdout-w})
-
-  (def cpu-info (:read stdout-r math/int32-max))
+  (def cpu-info ($<_ cat /proc/cpuinfo))
+  
   (def cpu-filter
     ~{:value (capture (any (if-not "\n" 1)))
       :line  (* "model name" :s+ ":" :s+ :value)
       :main  (* (any (if-not :line 1)) :line)})
-  (get (peg/match cpu-filter cpu-info) 0))
+  (def core-filter
+    ~{:value (capture (any (if-not "\n" 1)))
+      :line  (* "cpu cores" :s+ ":" :s+ :value)
+      :main  (* (any (if-not :line 1)) :line)})
+  (def thread-filter
+    ~{:value (capture (any (if-not "\n" 1)))
+      :line  (* "siblings" :s+ ":" :s+ :value)
+      :main  (* (any (if-not :line 1)) :line)})
+  
+  {:cpu-name       (get (peg/match cpu-filter cpu-info) 0)
+   :cpu-cores-ct   (get (peg/match core-filter cpu-info) 0)
+   :cpu-threads-ct (get (peg/match thread-filter cpu-info) 0)})
 
 (defn get-mem
   []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/meminfo"] :p {:out stdout-w})
-  
-  (def mem-info (:read stdout-r math/int32-max))
+  (def mem-info ($<_ cat /proc/meminfo))
   
   (def mem-total-filter
     ~{:line (* "MemTotal:" :s+ (capture :d+) :s+ "kB\n")
@@ -52,27 +62,22 @@
   (def mem-used (- mem-total mem-avail))
   (def swap-used (- swap-total swap-free))
   
-  {:mem-total           mem-total
-   :mem-avail           mem-avail
-   :mem-used            mem-used
-   :swap-total          swap-total
-   :swap-free           swap-free
-   :swap-used           swap-used})
+  {:mem-total  mem-total
+   :mem-avail  mem-avail
+   :mem-used   mem-used
+   :swap-total swap-total
+   :swap-free  swap-free
+   :swap-used  swap-used})
 
 (defn get-hardware-family
   []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["cat" "/sys/devices/virtual/dmi/id/product_family"] :p {:out stdout-w})
-  (string/trim (:read stdout-r math/int32-max)))
+  ($<_ cat /sys/devices/virtual/dmi/id/product_family))
 
 (defn get-disk-usage
   []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["df" "-h"] :p {:out stdout-w})
-  
   # Filesystem Size Used Avail Use% Mounted
   (def du
-    (->> (:read stdout-r math/int32-max)
+    (->> ($<_ df -h)
          (peg/replace-all ~(some " ") " ")
          (peg/replace-all ~(some "G") "")
          (peg/replace-all ~(some "%") "")
@@ -81,13 +86,79 @@
          (filter (fn [s] (not (string/find "/boot" s))))
          (map (fn [s] (string/split " " s))))))
 
-(defn hardware-probe
+(defn get-hardware-model
   []
-  (get-disk-usage)
-  (let [cpu (get-cpu)
-        mem (get-mem)
-        disks (get-disk-usage)]
-    (print (colorize "   CPU: ") cpu)
+  ($<_ cat /sys/devices/virtual/dmi/id/product_name))
+
+(defn get-os-release
+  []
+  (def p
+    ~{:value (capture (any (if-not "\"" 1)))
+      :line  (* "PRETTY_NAME" "=" "\"" :value "\"")
+      :main  (* (any (if-not :line 1)) :line)})
+  (get (peg/match p ($<_ cat /etc/os-release)) 0))
+
+(defn get-init
+  []
+  ($<_ ps -p 1 -o comm=))
+
+(defn get-arch
+  []
+  ($<_ uname -m))
+
+(defn get-firmware-info
+  []
+  {:bios-version ($<_ cat /sys/devices/virtual/dmi/id/bios_version)
+   :bios-date    ($<_ cat /sys/devices/virtual/dmi/id/bios_date)
+   })
+
+(defn get-netinfo
+  []
+  (def ips
+    (->> ($<_ ip -o -4 addr show | awk "{print $2, $4}")
+         (string/split "\n")))
+  {:gateway ($<_ ip route | awk "/default/ {print $3}")
+   :ips     ips
+   :dns     ($<_ grep -oE `\b([0-9]{1,3}\.){3}[0-9]{1,3}\b` /etc/resolv.conf)})
+
+(defn get-shell  []
+  (def [stdout-r stdout-w] (os/pipe))
+  (def pid (os/getpid))
+  (os/execute
+    ["sh" "-c" "ps -p $(ps -o ppid= -p $1) -o comm=" "sh" (string pid)]
+    :p
+    {:out stdout-w})
+  (string/replace "\n" "" (:read stdout-r math/int32-max)))
+
+(defn get-uptime
+  []
+  (def uptime ($<_ cat /proc/uptime))
+  (let [uptime-s              (get (string/split " " (string uptime)) 0)
+        uptime-h              (math/trunc (/ (scan-number uptime-s) 3600))
+        uptime-remaining-mins (math/trunc (/ (% (scan-number uptime-s) 3600) 60))]
+    {:hours uptime-h :minutes uptime-remaining-mins}))
+
+(defn get-kernel
+  []
+  (->> (string ($<_ uname -s) ($<_ uname -r))
+       (string/replace-all "\n" " ")))
+
+(defn probe
+  []
+  (let [host    (get-hardware-family)
+        os-name (get-os-release)
+        kernel  (get-kernel)
+        uptime  (get-uptime)
+        shell   (get-shell)
+        cpu     (get-cpu)
+        mem     (get-mem)
+        disks   (get-disk-usage)]
+    (print (colorize "  Host: ") host)
+    (print (colorize "    OS: ") os-name)
+    (print (colorize "Kernel: ") kernel)
+    (print (colorize " Shell: ") shell)
+    (print (colorize "Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
+    (print (colorize "   CPU: ") (get cpu :cpu-name))
     (print (colorize "Memory: ")
            (string/format "%.2f" (get mem :mem-used))
            " GB / "
@@ -106,55 +177,75 @@
              " GB "
              "[" (array/peek du) "]"))))
 
-(defn get-os-release
-  []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["cat" "/etc/os-release"] :p {:out stdout-w})
-  (def p
-    ~{:value (capture (any (if-not "\"" 1)))
-      :line  (* "PRETTY_NAME" "=" "\"" :value "\"")
-      :main  (* (any (if-not :line 1)) :line)})
-  (get (peg/match p (:read stdout-r math/int32-max)) 0))
-
-(defn get-shell  []
-  (def [stdout-r stdout-w] (os/pipe))
-  (def pid (os/getpid))
-  (os/execute
-    ["sh" "-c" "ps -p $(ps -o ppid= -p $1) -o comm=" "sh" (string pid)]
-    :p
-    {:out stdout-w})
-  (string/replace "\n" "" (:read stdout-r math/int32-max)))
-
-(defn get-uptime
-  []
-  (def [stdout-r stdout-w] (os/pipe))
-  (os/execute ["cat" "/proc/uptime"] :p {:out stdout-w})
-  (let [uptime-s              (get (string/split " " (:read stdout-r math/int32-max)) 0)
-        uptime-h              (math/trunc (/ (scan-number uptime-s) 3600))
-        uptime-remaining-mins (math/trunc (/ (% (scan-number uptime-s) 3600) 60))]
-    {:hours uptime-h :minutes uptime-remaining-mins}))
-
-(defn get-kernel
-  []
-  (def [uname-stdout-r uname-stdout-w] (os/pipe))
-  (os/execute ["uname" "-a"] :p {:out uname-stdout-w})
-  (get (string/split " " (:read uname-stdout-r math/int32-max)) 2))
-
-(defn os-probe
+(defn long-probe
   []
   (let [host    (get-hardware-family)
+        model   (get-hardware-model)
+        arch    (get-arch)
+        init    (get-init)
         os-name (get-os-release)
         kernel  (get-kernel)
         uptime  (get-uptime)
-        shell   (get-shell)]
-    (print (colorize "  Host: ") host)
-    (print (colorize "    OS: ") os-name)
-    (print (colorize "Kernel: ") kernel)
-    (print (colorize "Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
-    (print (colorize " Shell: ") shell)))
+        shell   (get-shell)
+        cpu     (get-cpu)
+        mem     (get-mem)
+        disks   (get-disk-usage)
+        netinfo (get-netinfo)
+        bios    (get-firmware-info)]
+    (print (colorize "     Host: ") host)
+    (print (colorize "    Model: ") model)
+    (print (colorize "     Arch: ") arch)
+    (print (colorize "       OS: ") os-name)
+    (print (colorize "   Kernel: ") kernel)
+    (print (colorize "     Init: ") init)
+    (print (colorize "    Shell: ") shell)
+    (print (colorize "   Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
+
+    (print)
+    (print (colorize "      CPU: ") (get cpu :cpu-name))
+    (print (colorize "    Cores: ") (get cpu :cpu-cores-ct) " cores " (get cpu :cpu-threads-ct) " threads")
+    (print (colorize "   Memory: ")
+           (string/format "%.2f" (get mem :mem-used))
+           " GB / "
+           (string/format "%.2f" (get mem :mem-total))
+           " GB")
+    (print (colorize "     Swap: ")
+           (string/format "%.2f" (get mem :swap-used))
+           " GB / "
+           (string/format "%.2f" (get mem :swap-total))
+           " GB")
+    (loop [[i du] :pairs disks]
+      (print (colorize (string "   Disk " (+ i 1) ": "))
+             (get du 2)
+             " GB / "
+             (get du 1)
+             " GB "
+             "[" (array/peek du) "]"))
+
+    (print)
+    (print (colorize "  Gateway: ") (get netinfo :gateway))
+    (loop [[i ip] :pairs (get netinfo :ips)]
+      (print (colorize (string "     IP " (+ i 1) ": "))
+             ip))
+    (print (colorize "      DNS: ") (get netinfo :dns))
+
+    (print)
+    (print (colorize "     BIOS: " ) (get bios :bios-version))
+    (print (colorize "BIOS Date: " ) (get bios :bios-date))))
+
+(def argparams
+  ["Probe your system's hardware and OS details"
+   "all" {:kind :flag
+          :short "a"
+          :help "Show larger probes"
+          :required false}])
 
 (defn main
   [& args]
-  (print)
-  (os-probe)
-  (hardware-probe))
+  (def arg (argparse ;argparams))
+  (unless arg
+    (os/exit 1))
+  
+  (if (get arg "all")
+    (long-probe)
+    (probe)))
