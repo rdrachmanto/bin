@@ -5,6 +5,11 @@
 (defn colorize [to-color]
   (string "\e[94m" to-color "\e[0m"))
 
+(defn strings-rjust [lsos]
+  (def longest (max ;(map length lsos)))
+  (->> lsos
+       (map (fn [s] (string/format (string "%" longest "s") s)))))
+
 (defn get-cpu
   []
   (def cpu-info ($<_ cat /proc/cpuinfo))
@@ -156,6 +161,16 @@
                      (string/split " "))))
          (from-pairs))))
 
+(defn process-probes
+  [probes]
+  (def titles @[])
+  (each p probes (array/push titles (p 0)))
+
+  (def rjust-titles (strings-rjust titles))
+  (loop [[i p] :pairs probes]
+    (put p 0 (rjust-titles i))
+    (print (colorize (p 0)) (p 1))))
+
 (defn probe
   []
   (let [host    (get-hardware-family)
@@ -166,29 +181,23 @@
         cpu     (get-cpu)
         mem     (get-mem)
         disks   (get-disk-usage)]
-    (print (colorize "  Host: ") host)
-    (print (colorize "    OS: ") os-name)
-    (print (colorize "Kernel: ") kernel)
-    (print (colorize " Shell: ") shell)
-    (print (colorize "Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
-    (print (colorize "   CPU: ") (get cpu :cpu-name))
-    (print (colorize "Memory: ")
-           (string/format "%.2f" (get mem :mem-used))
-           " GB / "
-           (string/format "%.2f" (get mem :mem-total))
-           " GB")
-    (print (colorize "  Swap: ")
-           (string/format "%.2f" (get mem :swap-used))
-           " GB / "
-           (string/format "%.2f" (get mem :swap-total))
-           " GB")
+    # A bit ugly but will do...
+    (def probes @[@["Host: "   host]
+                  @["OS: "     os-name]
+                  @["Kernel: " kernel]
+                  @["Shell: "  shell]
+                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
+                  @["CPU: "    (cpu :cpu-name)]
+                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
+                                       (string/format "%.1f" (mem :mem-total)) " GB")]
+                  @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                       (string/format "%.1f" (mem :swap-total)) " GB")]])
+    # Let's pretend this is like (add-to-list) in elisp...
     (loop [[i du] :pairs disks]
-      (print (colorize (string "Disk " (+ i 1) ": "))
-             (get du 2)
-             " GB / "
-             (get du 1)
-             " GB "
-             "[" (array/peek du) "]"))))
+      (array/push probes @[(string "Disk " (+ i 1) ": ")
+                           (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
+
+    (process-probes probes)))
 
 (defn long-probe
   []
@@ -206,53 +215,39 @@
         netinfo (get-netinfo)
         bios    (get-firmware-info)
         battery (get-battery-info)]
-    (print (colorize "             Host: ") host)
-    (print (colorize "    Host Serial #: ") model)
-    (print (colorize "     Architecture: ") arch)
-    (print (colorize "               OS: ") os-name)
-    (print (colorize "           Kernel: ") kernel)
-    (print (colorize "             Init: ") init)
-    (print (colorize "            Shell: ") shell)
-    (print (colorize "           Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
-
-    (print)
-    (print (colorize "              CPU: ") (get cpu :cpu-name))
-    (print (colorize "            Cores: ") (get cpu :cpu-cores-ct) " cores " (get cpu :cpu-threads-ct) " threads")
-    (print (colorize "           Memory: ")
-           (string/format "%.2f" (get mem :mem-used))
-           " GB / "
-           (string/format "%.2f" (get mem :mem-total))
-           " GB")
-    (print (colorize "             Swap: ")
-           (string/format "%.2f" (get mem :swap-used))
-           " GB / "
-           (string/format "%.2f" (get mem :swap-total))
-           " GB")
+    # Even uglier
+    (def probes @[@["Host: " host]
+                  @["Host Serial #: " model]
+                  @["Architecture: " arch]
+                  @["OS: " os-name]
+                  @["Kernel: " kernel]
+                  @["Init: " init]
+                  @["Shell: " shell]
+                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
+                  @["CPU: " (cpu :cpu-name)]
+                  @["Cores: " (string (cpu :cpu-cores-ct) " cores " (cpu :cpu-threads-ct) " threads")]
+                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
+                                       (string/format "%.1f" (mem :mem-total)) " GB")]
+                  @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                       (string/format "%.1f" (mem :swap-total)) " GB")]])
     (loop [[i du] :pairs disks]
-      (print (colorize (string "           Disk " (+ i 1) ": "))
-             (get du 2)
-             " GB / "
-             (get du 1)
-             " GB "
-             "[" (array/peek du) "]"))
+      (array/push probes @[(string "Disk " (+ i 1) ": ")
+                           (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
+    
+    (array/push probes @["Gateway: " (netinfo :gateway)])
+    (loop [[i ip] :pairs (netinfo :ips)]
+      (array/push probes @[(string "IP " (+ i 1) ": ")
+                           ip]))
+    (array/push probes @["DNS: " (netinfo :dns)])
 
-    (print)
-    (print (colorize "          Gateway: ") (get netinfo :gateway))
-    (loop [[i ip] :pairs (get netinfo :ips)]
-      (print (colorize (string "             IP " (+ i 1) ": "))
-             ip))
-    (print (colorize "              DNS: ") (get netinfo :dns))
-
-    (print)
-    (print (colorize "  Current Battery: ") (get battery "energy") " Wh")
-    (print (colorize "     Full Battery: ") (get battery "energy-full") " Wh")
-    (print (colorize "Original Capacity: ") (get battery "energy-full-design") " Wh")
-    (print (colorize "      Energy Rate: ") (get battery "energy-rate") " W")
-    (print (colorize "    Charge Cycles: ") (get battery "charge-cycles"))
-
-    (print)
-    (print (colorize "     BIOS Version: " ) (get bios :bios-version))
-    (print (colorize "        BIOS Date: " ) (get bios :bios-date))))
+    (array/concat probes @[@["Current Battery: " (string (battery "energy") " Wh")]
+                           @["Full Battery: " (string (battery "energy-full") " Wh")]
+                           @["Original Capacity: " (string (battery "energy-full-design") " Wh")]
+                           @["Energy Rate: " (string battery "energy-rate") " W"]
+                           @["Charge Cycles: " (string battery "charge-cycles")]
+                           @["BIOS Version: " (bios :bios-version)]
+                           @["BIOS Date: " (bios :bios-date)]])
+    (process-probes probes)))
 
 (def argparams
   ["Probe your system's hardware and OS details"
