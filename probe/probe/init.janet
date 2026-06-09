@@ -103,8 +103,10 @@
 (defn get-netinfo
   []
   (def ips
-    (->> ($<_ ip -o -4 addr show | awk "{print $2, $4}")
-         (string/split "\n")))
+    (->> ($<_ ip -o -4 addr show | awk "NR > 1 {print $2, $4}" )
+         (peg/replace-all ~(* (some "/") :w+) "")
+         (string/split "\n")
+         (map (fn [s] (string/split " " s)))))
   {:gateway ($<_ ip route | awk "/default/ {print $3}")
    :ips     ips
    :dns     ($<_ grep -oE `\b([0-9]{1,3}\.){3}[0-9]{1,3}\b` /etc/resolv.conf)})
@@ -138,7 +140,7 @@
          (peg/replace-all ~(some " ") " ")
          (peg/replace-all ~(+ (some "Wh") (some ":") (some "W")) "")
          (string/split "\n")
-         (map (fn [s]
+         (map (fn [s] 
                 (->> s
                      (string/trim)
                      (string/split " "))))
@@ -226,11 +228,11 @@
     (loop [[i du] :pairs disks]
       (array/push probes @[(string "Disk " (+ i 1) ": ")
                            (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
+    
     (array/push probes @[""])
     (array/push probes @["Gateway: " (netinfo :gateway)])
     (loop [[i ip] :pairs (netinfo :ips)]
-      (array/push probes @[(string "IP " (+ i 1) ": ")
-                           ip]))
+      (array/push probes @[(string (ip 0) " IP: ") (ip 1)]))
     (array/push probes @["DNS: " (netinfo :dns)])
 
     (array/concat probes @[@[""]
