@@ -143,6 +143,19 @@
   (->> (string ($<_ uname -s) ($<_ uname -r))
        (string/replace-all "\n" " ")))
 
+(defn get-battery-info
+  []
+  (def battery-info
+    (->> ($<_ upower -i /org/freedesktop/UPower/devices/battery_BAT0 | grep -E "energy|cycle")
+         (peg/replace-all ~(some " ") " ")
+         (peg/replace-all ~(+ (some "Wh") (some ":") (some "W")) "")
+         (string/split "\n")
+         (map (fn [s]
+                (->> s
+                     (string/trim)
+                     (string/split " "))))
+         (from-pairs))))
+
 (defn probe
   []
   (let [host    (get-hardware-family)
@@ -191,31 +204,32 @@
         mem     (get-mem)
         disks   (get-disk-usage)
         netinfo (get-netinfo)
-        bios    (get-firmware-info)]
-    (print (colorize "     Host: ") host)
-    (print (colorize "    Model: ") model)
-    (print (colorize "     Arch: ") arch)
-    (print (colorize "       OS: ") os-name)
-    (print (colorize "   Kernel: ") kernel)
-    (print (colorize "     Init: ") init)
-    (print (colorize "    Shell: ") shell)
-    (print (colorize "   Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
+        bios    (get-firmware-info)
+        battery (get-battery-info)]
+    (print (colorize "             Host: ") host)
+    (print (colorize "    Host Serial #: ") model)
+    (print (colorize "     Architecture: ") arch)
+    (print (colorize "               OS: ") os-name)
+    (print (colorize "           Kernel: ") kernel)
+    (print (colorize "             Init: ") init)
+    (print (colorize "            Shell: ") shell)
+    (print (colorize "           Uptime: ") (get uptime :hours) "h " (get uptime :minutes) "m")
 
     (print)
-    (print (colorize "      CPU: ") (get cpu :cpu-name))
-    (print (colorize "    Cores: ") (get cpu :cpu-cores-ct) " cores " (get cpu :cpu-threads-ct) " threads")
-    (print (colorize "   Memory: ")
+    (print (colorize "              CPU: ") (get cpu :cpu-name))
+    (print (colorize "            Cores: ") (get cpu :cpu-cores-ct) " cores " (get cpu :cpu-threads-ct) " threads")
+    (print (colorize "           Memory: ")
            (string/format "%.2f" (get mem :mem-used))
            " GB / "
            (string/format "%.2f" (get mem :mem-total))
            " GB")
-    (print (colorize "     Swap: ")
+    (print (colorize "             Swap: ")
            (string/format "%.2f" (get mem :swap-used))
            " GB / "
            (string/format "%.2f" (get mem :swap-total))
            " GB")
     (loop [[i du] :pairs disks]
-      (print (colorize (string "   Disk " (+ i 1) ": "))
+      (print (colorize (string "           Disk " (+ i 1) ": "))
              (get du 2)
              " GB / "
              (get du 1)
@@ -223,15 +237,22 @@
              "[" (array/peek du) "]"))
 
     (print)
-    (print (colorize "  Gateway: ") (get netinfo :gateway))
+    (print (colorize "          Gateway: ") (get netinfo :gateway))
     (loop [[i ip] :pairs (get netinfo :ips)]
-      (print (colorize (string "     IP " (+ i 1) ": "))
+      (print (colorize (string "             IP " (+ i 1) ": "))
              ip))
-    (print (colorize "      DNS: ") (get netinfo :dns))
+    (print (colorize "              DNS: ") (get netinfo :dns))
 
     (print)
-    (print (colorize "     BIOS: " ) (get bios :bios-version))
-    (print (colorize "BIOS Date: " ) (get bios :bios-date))))
+    (print (colorize "  Current Battery: ") (get battery "energy") " Wh")
+    (print (colorize "     Full Battery: ") (get battery "energy-full") " Wh")
+    (print (colorize "Original Capacity: ") (get battery "energy-full-design") " Wh")
+    (print (colorize "      Energy Rate: ") (get battery "energy-rate") " W")
+    (print (colorize "    Charge Cycles: ") (get battery "charge-cycles"))
+
+    (print)
+    (print (colorize "     BIOS Version: " ) (get bios :bios-version))
+    (print (colorize "        BIOS Date: " ) (get bios :bios-date))))
 
 (def argparams
   ["Probe your system's hardware and OS details"
