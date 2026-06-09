@@ -66,9 +66,7 @@
    :swap-free  swap-free
    :swap-used  swap-used})
 
-(defn get-hardware-family
-  []
-  ($<_ cat /sys/devices/virtual/dmi/id/product_family))
+(defn get-hardware-family [] ($<_ cat /sys/devices/virtual/dmi/id/product_family))
 
 (defn get-disk-usage
   []
@@ -83,9 +81,7 @@
          (filter (fn [s] (not (string/find "/boot" s))))
          (map (fn [s] (string/split " " s))))))
 
-(defn get-hardware-model
-  []
-  ($<_ cat /sys/devices/virtual/dmi/id/product_name))
+(defn get-hardware-model [] ($<_ cat /sys/devices/virtual/dmi/id/product_name))
 
 (defn get-os-release
   []
@@ -95,19 +91,14 @@
       :main  (* (any (if-not :line 1)) :line)})
   (get (peg/match p ($<_ cat /etc/os-release)) 0))
 
-(defn get-init
-  []
-  ($<_ ps -p 1 -o comm=))
+(defn get-init [] ($<_ ps -p 1 -o comm=))
 
-(defn get-arch
-  []
-  ($<_ uname -m))
+(defn get-arch [] ($<_ uname -m))
 
 (defn get-firmware-info
   []
   {:bios-version ($<_ cat /sys/devices/virtual/dmi/id/bios_version)
-   :bios-date    ($<_ cat /sys/devices/virtual/dmi/id/bios_date)
-   })
+   :bios-date    ($<_ cat /sys/devices/virtual/dmi/id/bios_date)})
 
 (defn get-netinfo
   []
@@ -153,8 +144,7 @@
                      (string/split " "))))
          (from-pairs))))
 
-(defn colorize [to-color]
-  (string "\e[94m" to-color "\e[0m"))
+(defn colorize [to-color] (string "\e[94m" to-color "\e[0m"))
 
 (defn strings-rjust [lsos]
   (def longest (max ;(map length lsos)))
