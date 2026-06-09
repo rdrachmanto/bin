@@ -2,14 +2,6 @@
 (use spork/sh)
 (use spork/sh-dsl)
 
-(defn colorize [to-color]
-  (string "\e[94m" to-color "\e[0m"))
-
-(defn strings-rjust [lsos]
-  (def longest (max ;(map length lsos)))
-  (->> lsos
-       (map (fn [s] (string/format (string "%" longest "s") s)))))
-
 (defn get-cpu
   []
   (def cpu-info ($<_ cat /proc/cpuinfo))
@@ -160,6 +152,14 @@
                      (string/trim)
                      (string/split " "))))
          (from-pairs))))
+
+(defn colorize [to-color]
+  (string "\e[94m" to-color "\e[0m"))
+
+(defn strings-rjust [lsos]
+  (def longest (max ;(map length lsos)))
+  (->> lsos
+       (map (fn [s] (string/format (string "%" longest "s") s)))))
 
 (defn process-probes
   [probes]
