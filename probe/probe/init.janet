@@ -128,7 +128,7 @@
 
 (defn get-kernel
   []
-  (->> (string ($<_ uname -s) ($<_ uname -r))
+  (->> (string ($<_ uname -s) " " ($<_ uname -r))
        (string/replace-all "\n" " ")))
 
 (defn get-battery-info
@@ -158,8 +158,11 @@
 
   (def rjust-titles (strings-rjust titles))
   (loop [[i p] :pairs probes]
-    (put p 0 (rjust-titles i))
-    (print (colorize (p 0)) (p 1))))
+    (if (= (p 0) "")
+      (print)
+      (do
+        (put p 0 (rjust-titles i))
+        (print (colorize (p 0)) (p 1))))))
 
 (defn probe
   []
@@ -223,18 +226,20 @@
     (loop [[i du] :pairs disks]
       (array/push probes @[(string "Disk " (+ i 1) ": ")
                            (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
-    
+    (array/push probes @[""])
     (array/push probes @["Gateway: " (netinfo :gateway)])
     (loop [[i ip] :pairs (netinfo :ips)]
       (array/push probes @[(string "IP " (+ i 1) ": ")
                            ip]))
     (array/push probes @["DNS: " (netinfo :dns)])
 
-    (array/concat probes @[@["Current Battery: " (string (battery "energy") " Wh")]
+    (array/concat probes @[@[""]
+                           @["Current Battery: " (string (battery "energy") " Wh")]
                            @["Full Battery: " (string (battery "energy-full") " Wh")]
                            @["Original Capacity: " (string (battery "energy-full-design") " Wh")]
-                           @["Energy Rate: " (string battery "energy-rate") " W"]
-                           @["Charge Cycles: " (string battery "charge-cycles")]
+                           @["Energy Rate: " (string (battery "energy-rate") " W")]
+                           @["Charge Cycles: " (battery "charge-cycles")]
+                           @[""]
                            @["BIOS Version: " (bios :bios-version)]
                            @["BIOS Date: " (bios :bios-date)]])
     (process-probes probes)))
