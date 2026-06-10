@@ -176,22 +176,19 @@
         cpu     (get-cpu)
         mem     (get-mem)
         disks   (get-disk-usage)]
-    # A bit ugly but will do...
-    (def probes @[@["Host: "   host]
-                  @["OS: "     os-name]
-                  @["Kernel: " kernel]
-                  @["Shell: "  shell]
-                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
-                  @["CPU: "    (cpu :cpu-name)]
-                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
-                                       (string/format "%.1f" (mem :mem-total)) " GB")]
-                  @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
-                                       (string/format "%.1f" (mem :swap-total)) " GB")]])
-    # Let's pretend this is like (add-to-list) in elisp...
-    (loop [[i du] :pairs disks]
-      (array/push probes @[(string "Disk " (+ i 1) ": ")
-                           (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
-
+    (def probes [@["Host: "   host]
+                 @["OS: "     os-name]
+                 @["Kernel: " kernel]
+                 @["Shell: "  shell]
+                 @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
+                 @["CPU: "    (cpu :cpu-name)]
+                 @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
+                                      (string/format "%.1f" (mem :mem-total)) " GB")]
+                 @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                      (string/format "%.1f" (mem :swap-total)) " GB")]
+                 ;(seq [[i du] :pairs disks]
+                    @[(string "Disk " (+ i 1) ": ")
+                      (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")])])
     (process-probes probes)))
 
 (defn long-probe
@@ -210,40 +207,40 @@
         netinfo (get-netinfo)
         bios    (get-firmware-info)
         battery (get-battery-info)]
-    # Even uglier
-    (def probes @[@["Host: " host]
-                  @["Host Serial #: " model]
-                  @["Architecture: " arch]
-                  @["OS: " os-name]
-                  @["Kernel: " kernel]
-                  @["Init: " init]
-                  @["Shell: " shell]
-                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
-                  @["CPU: " (cpu :cpu-name)]
-                  @["Cores: " (string (cpu :cpu-cores-ct) " cores " (cpu :cpu-threads-ct) " threads")]
-                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
-                                       (string/format "%.1f" (mem :mem-total)) " GB")]
-                  @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
-                                       (string/format "%.1f" (mem :swap-total)) " GB")]])
-    (loop [[i du] :pairs disks]
-      (array/push probes @[(string "Disk " (+ i 1) ": ")
-                           (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")]))
-    
-    (array/push probes @[""])
-    (array/push probes @["Gateway: " (netinfo :gateway)])
-    (loop [[i ip] :pairs (netinfo :ips)]
-      (array/push probes @[(string (ip 0) " IP: ") (ip 1)]))
-    (array/push probes @["DNS: " (netinfo :dns)])
-
-    (array/concat probes @[@[""]
-                           @["Current Battery: " (string (battery "energy") " Wh")]
-                           @["Full Battery: " (string (battery "energy-full") " Wh")]
-                           @["Original Capacity: " (string (battery "energy-full-design") " Wh")]
-                           @["Energy Rate: " (string (battery "energy-rate") " W")]
-                           @["Charge Cycles: " (battery "charge-cycles")]
-                           @[""]
-                           @["BIOS Version: " (bios :bios-version)]
-                           @["BIOS Date: " (bios :bios-date)]])
+    (def probes [@["Host: " host]
+                 @["Host Serial #: " model]
+                 @["Architecture: " arch]
+                 @["OS: " os-name]
+                 @["Kernel: " kernel]
+                 @["Init: " init]
+                 @["Shell: " shell]
+                 @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
+                 @["CPU: " (cpu :cpu-name)]
+                 @["Cores: " (string (cpu :cpu-cores-ct) " cores " (cpu :cpu-threads-ct) " threads")]
+                 @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
+                                      (string/format "%.1f" (mem :mem-total)) " GB")]
+                 @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                      (string/format "%.1f" (mem :swap-total)) " GB")]
+                 ;(seq [[i du] :pairs disks]
+                    @[(string "Disk " (+ i 1) ": ")
+                      (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")])
+                 @[""]
+                 @["Gateway: " (netinfo :gateway)]
+                 ;(map
+                    (fn [ip]
+                      @[(string (ip 0) " IP: ")
+                        (ip 1)])
+                    (netinfo :ips))
+                 @["DNS: " (netinfo :dns)]
+                 @[""]
+                 @["Current Battery: " (string (battery "energy") " Wh")]
+                 @["Full Battery: " (string (battery "energy-full") " Wh")]
+                 @["Original Capacity: " (string (battery "energy-full-design") " Wh")]
+                 @["Energy Rate: " (string (battery "energy-rate") " W")]
+                 @["Charge Cycles: " (battery "charge-cycles")]
+                 @[""]
+                 @["BIOS Version: " (bios :bios-version)]
+                 @["BIOS Date: " (bios :bios-date)]])
     (process-probes probes)))
 
 (def argparams
