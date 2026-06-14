@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+
+print_usage() {
+    cat << EOF
+Usage: weather [-t/-f] <location>
+
+Options:
+  -t    Show current weather and today's forecast
+  -f    Show current weather and 3-day forecast
+EOF
+}
+
+settings=""
+
+while getopts ":tfh" opt; do
+    case ${opt} in
+        t) settings="1F" ;;
+        f) settings="F" ;;
+        h)
+            print_usage
+            return 0
+            ;;
+        \?) echo "Invalid option"
+            exit 1
+            ;;
+    esac
+done
+
+shift $((OPTIND - 1))
+
+location="${1:-""}"
+curl "wttr.in/${location}?${settings}"

@@ -6,6 +6,7 @@ to_deploy=(
   "hb/bin/hb"
   "probe/build/probe"
   "e"
+  sh/scripts/*
 )
 
 for td in "${to_deploy[@]}"; do
@@ -14,5 +15,5 @@ for td in "${to_deploy[@]}"; do
   dest=$HOME/.local/bin/$name
   
   ln -sfn "$src" "$dest"
-  echo "Linked $src --> $dest"
+  echo "Linked $td --> $dest"
 done

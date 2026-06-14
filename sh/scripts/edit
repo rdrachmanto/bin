@@ -1,0 +1,4 @@
+#!/usr/bin/env sh 
+
+file="$(fd --type f | fzf)" || return
+"${VISUAL:-${EDITOR:-vim}}" "$file"
