@@ -1,0 +1,15 @@
+** Shell Scripts
+
+Shell scripts and functions live here, divided into subdirectories ~functions/~ and ~scripts/~.
+
+Functions are for bash code that need to change current environment (i.e. using ~cd~ command).
+Functions are deployed with the below snippet inside ~.zshrc~ or ~.bashrc~
+
+#+BEGIN_SRC sh
+for funs in "${HOME}"/Bin/sh/functions/*; do
+    source "$funs"
+done
+#+END_SRC
+
+Scripts are for other general use cases, deployed via ~Bin/deploy.sh~ to ~~/.local/bin~
+
