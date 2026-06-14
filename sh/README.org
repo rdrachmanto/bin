@@ -11,5 +11,5 @@ for funs in "${HOME}"/Bin/sh/functions/*; do
 done
 #+END_SRC
 
-Scripts are for other general use cases, deployed via ~Bin/deploy.sh~ to ~~/.local/bin~
+Scripts are for other general use cases, deployed via ~Bin/deploy.sh~ to =~/.local/bin=
 
