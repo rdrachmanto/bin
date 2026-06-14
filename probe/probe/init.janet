@@ -5,28 +5,36 @@
 (defn get-cpu
   []
   (def cpu-info ($<_ cat /proc/cpuinfo))
-  
+
   (def cpu-filter
     ~{:value (capture (any (if-not "\n" 1)))
-      :line  (* "model name" :s+ ":" :s+ :value)
-      :main  (* (any (if-not :line 1)) :line)})
+      :line (* "model name" :s+ ":" :s+ :value)
+      :main (* (any (if-not :line 1)) :line)})
   (def core-filter
     ~{:value (capture (any (if-not "\n" 1)))
-      :line  (* "cpu cores" :s+ ":" :s+ :value)
-      :main  (* (any (if-not :line 1)) :line)})
+      :line (* "cpu cores" :s+ ":" :s+ :value)
+      :main (* (any (if-not :line 1)) :line)})
   (def thread-filter
     ~{:value (capture (any (if-not "\n" 1)))
-      :line  (* "siblings" :s+ ":" :s+ :value)
-      :main  (* (any (if-not :line 1)) :line)})
-  
-  {:cpu-name       (get (peg/match cpu-filter cpu-info) 0)
-   :cpu-cores-ct   (get (peg/match core-filter cpu-info) 0)
+      :line (* "siblings" :s+ ":" :s+ :value)
+      :main (* (any (if-not :line 1)) :line)})
+
+  {:cpu-name (get (peg/match cpu-filter cpu-info) 0)
+   :cpu-cores-ct (get (peg/match core-filter cpu-info) 0)
    :cpu-threads-ct (get (peg/match thread-filter cpu-info) 0)})
+
+(defn get-gpu
+  []
+  (->> ($<_ lspci -nnk |
+            grep -iEA3 "VGA|3D|Display" |
+            grep -E "NVIDIA|Intel|AMD" |
+            grep -Po ``\[\K[^\]]+(?=\]\s+\[[0-9a-fA-F]{4}:[0-9a-fA-F]{4}\])``)
+       (string/split "\n")))
 
 (defn get-mem
   []
   (def mem-info ($<_ cat /proc/meminfo))
-  
+
   (def mem-total-filter
     ~{:line (* "MemTotal:" :s+ (capture :d+) :s+ "kB\n")
       :main (* (any (if-not :line 1)) :line)})
@@ -58,13 +66,13 @@
         (/ 1_000_000)))
   (def mem-used (- mem-total mem-avail))
   (def swap-used (- swap-total swap-free))
-  
-  {:mem-total  mem-total
-   :mem-avail  mem-avail
-   :mem-used   mem-used
+
+  {:mem-total mem-total
+   :mem-avail mem-avail
+   :mem-used mem-used
    :swap-total swap-total
-   :swap-free  swap-free
-   :swap-used  swap-used})
+   :swap-free swap-free
+   :swap-used swap-used})
 
 (defn get-hardware-family [] ($<_ cat /sys/devices/virtual/dmi/id/product_family))
 
@@ -87,8 +95,8 @@
   []
   (def p
     ~{:value (capture (any (if-not "\"" 1)))
-      :line  (* "PRETTY_NAME" "=" "\"" :value "\"")
-      :main  (* (any (if-not :line 1)) :line)})
+      :line (* "PRETTY_NAME" "=" "\"" :value "\"")
+      :main (* (any (if-not :line 1)) :line)})
   (get (peg/match p ($<_ cat /etc/os-release)) 0))
 
 (defn get-init [] ($<_ ps -p 1 -o comm=))
@@ -98,20 +106,20 @@
 (defn get-firmware-info
   []
   {:bios-version ($<_ cat /sys/devices/virtual/dmi/id/bios_version)
-   :bios-date    ($<_ cat /sys/devices/virtual/dmi/id/bios_date)})
+   :bios-date ($<_ cat /sys/devices/virtual/dmi/id/bios_date)})
 
 (defn get-netinfo
   []
   (def ips
-    (->> ($<_ ip -o -4 addr show | awk "NR > 1 {print $2, $4}" )
+    (->> ($<_ ip -o -4 addr show |awk "NR > 1 {print $2, $4}")
          (peg/replace-all ~(* (some "/") :w+) "")
          (string/split "\n")
          (map (fn [s] (string/split " " s)))))
-  {:gateway ($<_ ip route | awk "/default/ {print $3}")
-   :ips     ips
-   :dns     ($<_ grep -oE `\b([0-9]{1,3}\.){3}[0-9]{1,3}\b` /etc/resolv.conf)})
+  {:gateway ($<_ ip route |awk "/default/ {print $3}")
+   :ips ips
+   :dns ($<_ grep -oE `\b([0-9]{1,3}\.){3}[0-9]{1,3}\b` /etc/resolv.conf)})
 
-(defn get-shell  []
+(defn get-shell []
   (def [stdout-r stdout-w] (os/pipe))
   (def pid (os/getpid))
   (os/execute
@@ -123,8 +131,8 @@
 (defn get-uptime
   []
   (def uptime ($<_ cat /proc/uptime))
-  (let [uptime-s              (get (string/split " " (string uptime)) 0)
-        uptime-h              (math/trunc (/ (scan-number uptime-s) 3600))
+  (let [uptime-s (get (string/split " " (string uptime)) 0)
+        uptime-h (math/trunc (/ (scan-number uptime-s) 3600))
         uptime-remaining-mins (math/trunc (/ (% (scan-number uptime-s) 3600) 60))]
     {:hours uptime-h :minutes uptime-remaining-mins}))
 
@@ -136,11 +144,11 @@
 (defn get-battery-info
   []
   (def battery-info
-    (->> ($<_ upower -i /org/freedesktop/UPower/devices/battery_BAT0 | grep -E "energy|cycle")
+    (->> ($<_ upower -i /org/freedesktop/UPower/devices/battery_BAT0 |grep -E "energy|cycle")
          (peg/replace-all ~(some " ") " ")
          (peg/replace-all ~(+ (some "Wh") (some ":") (some "W")) "")
          (string/split "\n")
-         (map (fn [s] 
+         (map (fn [s]
                 (->> s
                      (string/trim)
                      (string/split " "))))
@@ -168,24 +176,27 @@
 
 (defn probe
   []
-  (let [host    (get-hardware-family)
+  (let [host (get-hardware-family)
         os-name (get-os-release)
-        kernel  (get-kernel)
-        uptime  (get-uptime)
-        shell   (get-shell)
-        cpu     (get-cpu)
-        mem     (get-mem)
-        disks   (get-disk-usage)]
-    (def probes [@["Host: "   host]
-                 @["OS: "     os-name]
+        kernel (get-kernel)
+        uptime (get-uptime)
+        shell (get-shell)
+        cpu (get-cpu)
+        gpus (get-gpu)
+        mem (get-mem)
+        disks (get-disk-usage)]
+    (def probes [@["Host: " host]
+                 @["OS: " os-name]
                  @["Kernel: " kernel]
-                 @["Shell: "  shell]
+                 @["Shell: " shell]
                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
-                 @["CPU: "    (cpu :cpu-name)]
+                 @["CPU: " (cpu :cpu-name)]
+                 ;(seq [[i gpu] :pairs gpus]
+                    @[(string "GPU " (+ i 1) ": ") gpu])
                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
                                       (string/format "%.1f" (mem :mem-total)) " GB")]
-                 @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
-                                      (string/format "%.1f" (mem :swap-total)) " GB")]
+                 @["Swap: " (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                    (string/format "%.1f" (mem :swap-total)) " GB")]
                  ;(seq [[i du] :pairs disks]
                     @[(string "Disk " (+ i 1) ": ")
                       (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")])])
@@ -193,19 +204,20 @@
 
 (defn long-probe
   []
-  (let [host    (get-hardware-family)
-        model   (get-hardware-model)
-        arch    (get-arch)
-        init    (get-init)
+  (let [host (get-hardware-family)
+        model (get-hardware-model)
+        arch (get-arch)
+        init (get-init)
         os-name (get-os-release)
-        kernel  (get-kernel)
-        uptime  (get-uptime)
-        shell   (get-shell)
-        cpu     (get-cpu)
-        mem     (get-mem)
-        disks   (get-disk-usage)
+        kernel (get-kernel)
+        uptime (get-uptime)
+        shell (get-shell)
+        cpu (get-cpu)
+        gpus (get-gpu)
+        mem (get-mem)
+        disks (get-disk-usage)
         netinfo (get-netinfo)
-        bios    (get-firmware-info)
+        bios (get-firmware-info)
         battery (get-battery-info)]
     (def probes [@["Host: " host]
                  @["Host Serial #: " model]
@@ -217,10 +229,12 @@
                  @["Uptime: " (string (uptime :hours) "h " (uptime :minutes) "m")]
                  @["CPU: " (cpu :cpu-name)]
                  @["Cores: " (string (cpu :cpu-cores-ct) " cores " (cpu :cpu-threads-ct) " threads")]
+                 ;(seq [[i gpu] :pairs gpus]
+                    @[(string "GPU " (+ i 1) ": ") gpu])
                  @["Memory: " (string (string/format "%.1f" (mem :mem-used)) " GB / "
                                       (string/format "%.1f" (mem :mem-total)) " GB")]
-                 @["Swap: "   (string (string/format "%.1f" (mem :swap-used)) " GB / "
-                                      (string/format "%.1f" (mem :swap-total)) " GB")]
+                 @["Swap: " (string (string/format "%.1f" (mem :swap-used)) " GB / "
+                                    (string/format "%.1f" (mem :swap-total)) " GB")]
                  ;(seq [[i du] :pairs disks]
                     @[(string "Disk " (+ i 1) ": ")
                       (string (du 2) " GB / " (du 1) " GB [" (array/peek du) "]")])
@@ -255,7 +269,7 @@
   (def arg (argparse ;argparams))
   (unless arg
     (os/exit 1))
-  
+
   (if (get arg "all")
     (long-probe)
     (probe)))
